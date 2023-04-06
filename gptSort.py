@@ -146,7 +146,7 @@ def main():
 
     # create a GPT instance
     model_config = GPT.get_default_config()
-    model_config.model_type = 'gpt-mini'
+    model_config.model_type = 'gpt2-large'
     model_config.vocab_size = train_dataset.get_vocab_size()
     model_config.block_size = train_dataset.get_block_size()
 
@@ -154,8 +154,6 @@ def main():
         model_config.use_te = True
         if args.ln_mlp:
             model_config.ln_mlp = True
-    if args.use_amp:
-        model_config.use_amp = True
     if args.use_fp8:
         model_config.use_fp8 = True
 
@@ -163,6 +161,8 @@ def main():
 
     # create a Trainer object
     train_config = Trainer.get_default_config()
+    if args.use_amp:
+        train_config.use_amp = True
     train_config.learning_rate = args.lr
     # the model we're using is so small that we can go a bit faster
     train_config.max_iters = args.miters

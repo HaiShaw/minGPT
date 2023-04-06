@@ -26,6 +26,7 @@ class Trainer:
         C.betas = (0.9, 0.95)
         C.weight_decay = 0.1 # only applied on matmul weights
         C.grad_norm_clip = 1.0
+        C.use_amp = False
         return C
 
     def __init__(self, config, model, train_dataset):
@@ -37,7 +38,15 @@ class Trainer:
 
         # determine the device we'll train on
         if config.device == 'auto':
-            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            if torch.cuda.is_available():
+                self.device = 'cuda'
+                if config.use_amp:
+                    self.scaler = torch.cuda.amp.GradScaler(enabled=True)
+            else:
+                self.device = 'cpu'
+                if config.use_amp:
+                    self.config.use_amp = False
+                    print("automatic mixed precision is ignored on cpu device")
         else:
             self.device = config.device
         self.model = self.model.to(self.device)
@@ -89,14 +98,32 @@ class Trainer:
             batch = [t.to(self.device) for t in batch]
             x, y = batch
 
-            # forward the model
-            logits, self.loss = model(x, y)
+            if config.use_amp:
+                # autocast and GradScaler
+                with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=True):
+                    # forward the model
+                    logits, self.loss = model(x, y)
 
-            # backprop and update the parameters
-            model.zero_grad(set_to_none=True)
-            self.loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
-            self.optimizer.step()
+                # backprop and update the parameters
+                self.optimizer.zero_grad(set_to_none=True)
+                self.scaler.scale(self.loss).backward()
+
+                # Unscales the gradients, for clips as usual
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+
+            else:
+                # forward the model
+                logits, self.loss = model(x, y)
+
+                # backprop and update the parameters
+                model.zero_grad(set_to_none=True)
+                self.loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+                self.optimizer.step()
 
             self.trigger_callbacks('on_batch_end')
             self.iter_num += 1
