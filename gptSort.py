@@ -23,7 +23,7 @@ class SortDataset(Dataset):
     where I is "ignore", as the transformer is reading the input sequence
     """
 
-    def __init__(self, split, length=12, num_digits=5):
+    def __init__(self, split, length=16, num_digits=8):
         assert split in {'train', 'test'}
         self.split = split
         self.length = length
@@ -111,7 +111,7 @@ def main():
     parser.add_argument(
         "--miters",
         type=int,
-        default=3000,
+        default=5100,
         metavar="N",
         help="number of epochs to train (default: 2000)",
     )
@@ -163,6 +163,8 @@ def main():
     train_config = Trainer.get_default_config()
     if args.use_amp:
         train_config.use_amp = True
+    if args.use_fp8:
+        train_config.use_fp8 = True
     train_config.learning_rate = args.lr
     # the model we're using is so small that we can go a bit faster
     train_config.max_iters = args.miters
@@ -181,7 +183,7 @@ def main():
 
     # let's run a random given sequence through the model as well
     n = train_dataset.length # naugy direct access shrug
-    inp = torch.tensor([[0, 4, 2, 1, 0, 1, 3, 0, 4, 1, 2, 3]], dtype=torch.long).to(trainer.device)
+    inp = torch.tensor([[0, 5, 4, 2, 1, 0, 7, 3, 0, 4, 6, 5, 7, 1, 2, 3]], dtype=torch.long).to(trainer.device)
     assert inp[0].nelement() == n
     with torch.no_grad():
         cat = model.generate(inp, n, do_sample=False)

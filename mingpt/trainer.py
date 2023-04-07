@@ -10,6 +10,9 @@ import torch
 from torch.utils.data.dataloader import DataLoader
 from mingpt.utils import CfgNode as CN
 
+from transformer_engine import pytorch as te
+from transformer_engine.common import recipe
+
 class Trainer:
 
     @staticmethod
@@ -27,6 +30,7 @@ class Trainer:
         C.weight_decay = 0.1 # only applied on matmul weights
         C.grad_norm_clip = 1.0
         C.use_amp = False
+        C.use_fp8 = False
         return C
 
     def __init__(self, config, model, train_dataset):
@@ -42,11 +46,18 @@ class Trainer:
                 self.device = 'cuda'
                 if config.use_amp:
                     self.scaler = torch.cuda.amp.GradScaler(enabled=True)
+                if config.use_fp8:
+                    # use_fp8 overrides use_amp
+                    # Create an FP8 recipe. All input args are optional
+                    self.recipe = recipe.DelayedScaling()
             else:
                 self.device = 'cpu'
                 if config.use_amp:
                     self.config.use_amp = False
                     print("automatic mixed precision is ignored on cpu device")
+                if config.use_fp8:
+                    self.config.use_fp8 = False
+                    print("float8 precision support is ignored on cpu device")
         else:
             self.device = config.device
         self.model = self.model.to(self.device)
@@ -98,7 +109,17 @@ class Trainer:
             batch = [t.to(self.device) for t in batch]
             x, y = batch
 
-            if config.use_amp:
+            if config.use_fp8:
+                with te.fp8_autocast(enabled=True, fp8_recipe=self.recipe):
+                    logits, self.loss = model(x, y)
+
+                # backprop and update the parameters
+                model.zero_grad(set_to_none=True)
+                self.loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+                self.optimizer.step()
+
+            elif config.use_amp:
                 # autocast and GradScaler
                 with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=True):
                     # forward the model
