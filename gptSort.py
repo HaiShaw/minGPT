@@ -82,7 +82,7 @@ def eval_split(model, trainer, trainset, testset, split, max_batches):
     n = trainset.length # naugy direct access shrug
     results = []
     mistakes_printed_already = 0
-    loader = DataLoader(dataset, batch_size=100, num_workers=0, drop_last=True)
+    loader = DataLoader(dataset, batch_size=128, num_workers=0, drop_last=True)
     for b, (x, y) in enumerate(loader):
         x = x.to(trainer.device)
         y = y.to(trainer.device)
