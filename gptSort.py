@@ -23,14 +23,14 @@ class SortDataset(Dataset):
     where I is "ignore", as the transformer is reading the input sequence
     """
 
-    def __init__(self, split, length=16, num_digits=8):
+    def __init__(self, split, length=33, num_digits=10):
         assert split in {'train', 'test'}
         self.split = split
         self.length = length
         self.num_digits = num_digits
     
     def __len__(self):
-        return 10000 # ...
+        return 12800 # ...
     
     def get_vocab_size(self):
         return self.num_digits
@@ -39,7 +39,7 @@ class SortDataset(Dataset):
         # the length of the sequence that will feed into transformer, 
         # containing concatenated input and the output, but -1 because
         # the transformer starts making predictions at the last input element
-        return self.length * 2 - 1
+        return self.length * 2 - 2
 
     def __getitem__(self, idx):
         
@@ -67,8 +67,8 @@ class SortDataset(Dataset):
         cat = torch.cat((inp, sol), dim=0)
 
         # the inputs to the transformer will be the offset sequence
-        x = cat[:-1].clone()
-        y = cat[1:].clone()
+        x = cat[:-2].clone()
+        y = cat[1:-1].clone()
         # we only want to predict at output locations, mask out the loss at the input locations
         y[:self.length-1] = -1
         return x, y
@@ -82,16 +82,16 @@ def eval_split(model, trainer, trainset, testset, split, max_batches):
     n = trainset.length # naugy direct access shrug
     results = []
     mistakes_printed_already = 0
-    loader = DataLoader(dataset, batch_size=100, num_workers=0, drop_last=False)
+    loader = DataLoader(dataset, batch_size=100, num_workers=0, drop_last=True)
     for b, (x, y) in enumerate(loader):
         x = x.to(trainer.device)
         y = y.to(trainer.device)
         # isolate the input pattern alone
         inp = x[:, :n]
-        sol = y[:, -n:]
+        sol = y[:, -(n-1):]
         # let the model sample the rest of the sequence
         cat = model.generate(inp, n, do_sample=False) # using greedy argmax, not sampling
-        sol_candidate = cat[:, n:] # isolate the filled in sequence
+        sol_candidate = cat[:, n:-1] # isolate the filled in sequence
         # compare the predicted sequence to the true sequence
         correct = (sol == sol_candidate).all(1).cpu() # Software 1.0 vs. Software 2.0 fight RIGHT on this line haha
         for i in range(x.size(0)):
@@ -111,7 +111,7 @@ def main():
     parser.add_argument(
         "--miters",
         type=int,
-        default=5100,
+        default=2560,
         metavar="N",
         help="number of epochs to train (default: 2000)",
     )
@@ -178,21 +178,22 @@ def main():
 
     # run a lot of examples from both train and test through the model and verify the output correctness
     with torch.no_grad():
-        train_score = eval_split(model, trainer, train_dataset, test_dataset, 'train', max_batches=50)
-        test_score  = eval_split(model, trainer, train_dataset, test_dataset, 'test',  max_batches=50)
+        train_score = eval_split(model, trainer, train_dataset, test_dataset, 'train', max_batches=64)
+        test_score  = eval_split(model, trainer, train_dataset, test_dataset, 'test',  max_batches=64)
 
-    # let's run a random given sequence through the model as well
-    n = train_dataset.length # naugy direct access shrug
-    inp = torch.tensor([[0, 5, 4, 2, 1, 0, 7, 3, 0, 4, 6, 5, 7, 1, 2, 3]], dtype=torch.long).to(trainer.device)
-    assert inp[0].nelement() == n
-    with torch.no_grad():
-        cat = model.generate(inp, n, do_sample=False)
-    sol = torch.sort(inp[0])[0]
-    sol_candidate = cat[:, n:]
-    print('input sequence  :', inp.tolist())
-    print('predicted sorted:', sol_candidate.tolist())
-    print('gt sort         :', sol.tolist())
-    print('matches         :', bool((sol == sol_candidate).all()))
+    if not args.use_fp8:
+        # let's run a random given sequence through the model as well
+        n = train_dataset.length # naugy direct access shrug
+        inp = torch.tensor([[0, 5, 4, 2, 1, 9, 7, 3, 0, 8, 6, 5, 7, 4, 2, 3, 1, 8, 3, 5, 0, 9, 7, 3, 6, 2, 4, 1, 7, 0, 8, 6, 4]], dtype=torch.long).to(trainer.device)
+        assert inp[0].nelement() == n
+        with torch.no_grad():
+            cat = model.generate(inp, n, do_sample=False)
+        sol = torch.sort(inp[0])[0]
+        sol_candidate = cat[:, n:]
+        print('input sequence  :', inp.tolist())
+        print('predicted sorted:', sol_candidate.tolist())
+        print('gt sort         :', sol.tolist())
+        print('matches         :', bool((sol == sol_candidate).all()))
 
 
 if __name__ == "__main__":

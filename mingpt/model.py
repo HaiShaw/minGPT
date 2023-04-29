@@ -198,7 +198,6 @@ class GPT(nn.Module):
                 h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
                 ln_f = te.LayerNorm(config.n_embd),
             ))
-            self.lm_head = te.Linear(config.n_embd, config.vocab_size, bias=False, init_method = config.init_method)
         else:
             self.transformer = nn.ModuleDict(dict(
                 wte = nn.Embedding(config.vocab_size, config.n_embd),
@@ -207,7 +206,8 @@ class GPT(nn.Module):
                 h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
                 ln_f = nn.LayerNorm(config.n_embd),
             ))
-            self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
 
         # init all weights, and apply a special scaled init to the residual projections, per GPT-2 paper
