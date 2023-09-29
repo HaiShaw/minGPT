@@ -156,7 +156,8 @@ def main():
             model_config.ln_mlp = True
     if args.use_fp8:
         model_config.use_fp8 = True
-
+    elif args.use_amp:
+        model_config.use_amp = True
     model = GPT(model_config)
 
     # create a Trainer object
